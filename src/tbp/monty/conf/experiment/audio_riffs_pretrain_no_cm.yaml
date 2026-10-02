@@ -1,0 +1,28 @@
+# @package _global_
+# Learn the takes EXCEPT the two C-minor ones (for audio_riffs_eval_transposed).
+# Stock DisplacementGraphLM.
+defaults:
+  - /monty: graph_exp1000_e3_t3
+  - /monty/motor_system_config: naive_scan_1
+  - /monty/learning_module: displacement_1lm
+  - /monty/sensor_module: audio
+  - /monty/connectivity: 1lm_1audio
+  - /environment: audio_riffs_train
+  - /env_interface: audio_riffs_train
+  - /env_interface/transform: none
+  - /termination: any1_objectrecognition_t64_e100_tot500
+  - /logging: silent_warning_train
+
+experiment:
+  _target_: tbp.monty.frameworks.experiments.pretraining_experiments.MontySupervisedObjectPretrainingExperiment
+  config:
+    show_sensor_output: false
+    n_train_epochs: 1
+    n_eval_epochs: 1
+    model_name_or_path: ''
+    seed: 42
+    supervised_lm_ids: all
+    train_env_interface_args:
+      object_names: [chords_am, chords_cmaj, sentimental, swing_am, swing_maj]
+    logging:
+      run_name: audio_riffs_pretrain_no_cm

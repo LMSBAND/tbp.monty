@@ -1,0 +1,11 @@
+# @package experiment.config
+# Audio: 64 train steps x 0.25 s = 16 s of listening per object (a full pass
+# of each phrase, rests included); up to 25 s to recognize one.
+match_criterion:
+  _target_: tbp.monty.experiment.match_criteria.AnyLMsMatch
+  count: 1
+recognition_policy:
+  _target_: tbp.monty.experiment.recognition_policy.ObjectRecognition
+  max_train_steps: 64
+  max_eval_steps: 100
+  max_total_steps: 500

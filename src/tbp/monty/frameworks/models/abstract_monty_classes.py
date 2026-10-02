@@ -57,6 +57,7 @@ class SensorObservation(TypedDict, total=False):
     cam_to_world: npt.NDArray[np.float64]  # TODO: Verify specific type
     pixel_loc: npt.NDArray[np.float64]  # TODO: Verify specific type
     raw: npt.NDArray[np.uint8]
+    waveform: npt.NDArray[np.float64]  # mono audio chunk, see models/audio
 
 
 class AgentObservations(Dict[SensorID, SensorObservation]):
