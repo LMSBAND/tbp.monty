@@ -65,6 +65,11 @@ simulator_habitat = [
 simulator_mujoco = [
     'mujoco'
 ]
+audio = [
+    # Compiled CARFAC cochlea for tbp.monty.frameworks.models.audio; without it the
+    # NumPy reference runs instead (same results, ~20-60x slower).
+    'numba',
+]
 analysis = [
     'ipython',
     'seaborn',
@@ -196,9 +201,16 @@ mypy_path = "src"
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+# Vendored google/carfac reference, kept unmodified (see its header).
+module = "tbp.monty.frameworks.models.audio.carfac"
+ignore_errors = true
+
 [tool.ruff]
 line-length = 88
 target-version = "py38"
+# Vendored google/carfac reference, kept unmodified (see its header).
+extend-exclude = ["src/tbp/monty/frameworks/models/audio/carfac.py"]
 
 [tool.ruff.format]
 indent-style = "space"
