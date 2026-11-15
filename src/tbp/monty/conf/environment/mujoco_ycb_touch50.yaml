@@ -4,7 +4,7 @@
 # harder) and a Penn Haptic Texture Toolkit model. Many share a material (four cardboard boxes, four tin
 # cans, a dozen plastics), so for those only shape tells them apart.
 defaults:
-  - mujoco_ycb_touch_only_texture
+  - /environment/mujoco_ycb_touch_only_texture
 env_init_args:
   materials:
     cracker_box:          {friction: [0.7, 0.005, 0.0001], solref: [0.02, 1.0], texture: Cardboard}   # cardboard

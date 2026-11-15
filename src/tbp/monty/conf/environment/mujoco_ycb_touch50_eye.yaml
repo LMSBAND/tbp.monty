@@ -2,7 +2,7 @@
 # mujoco_ycb_touch50 with the eye put back: the stock surface agent's patch camera and view finder, and the
 # fingertip (palpating, feeling the recorded textures) at the patch camera.
 defaults:
-  - mujoco_ycb_touch50
+  - /environment/mujoco_ycb_touch50
 env_init_args:
   agents:
     - _target_: tbp.monty.simulators.mujoco.agents.SurfaceAgent

@@ -1,7 +1,7 @@
 # @package experiment.config.monty_config.learning_modules
 # evidence_eye_finger with the fingertip matching on everything it feels (as evidence_touch_all).
 defaults:
-  - evidence_eye_finger
+  - /monty/learning_module/evidence_eye_finger
 learning_module_1:
   feature_weights:
     finger:

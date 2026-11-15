@@ -1,7 +1,7 @@
 # @package experiment.config.monty_config.learning_modules
 # displacement_eye_finger with the full fingertip stored (curvature, texture).
 defaults:
-  - displacement_eye_finger
+  - /monty/learning_module/displacement_eye_finger
 learning_module_1:
   graph_delta_thresholds:
     finger:

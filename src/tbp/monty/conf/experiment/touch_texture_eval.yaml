@@ -1,5 +1,5 @@
 # @package _global_
-# Touch in MuJoCo, eval, camera-free, with recorded texture (swap the LM for evidence_touch_shape / _texture).
+# Touch in MuJoCo, eval, camera-free, with recorded texture (see also touch_texture_eval_shape_texture).
 defaults:
   - /monty: evidencegraph_exp1000_emin_t3
   - /monty/motor_system_config: touch_surface_goal1

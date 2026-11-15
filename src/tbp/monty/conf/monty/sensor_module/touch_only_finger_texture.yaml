@@ -1,7 +1,7 @@
 # @package experiment.config.monty_config.sensor_modules
 # touch_only_finger plus texture: roughness and vibration centroid of a stroke over the recorded texture.
 defaults:
-  - touch_only_finger
+  - /monty/sensor_module/touch_only_finger
 sensor_module_0:
   features: [grip, stiffness, principal_curvatures, principal_curvatures_log, roughness, vibration_centroid]
   delta_thresholds:

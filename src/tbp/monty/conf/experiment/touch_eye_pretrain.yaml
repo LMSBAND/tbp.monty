@@ -1,5 +1,5 @@
 # @package _global_
-# Touch in MuJoCo, pretraining (eye): only_surf_agent_training_10obj_mujoco on four objects with materials.
+# Touch in MuJoCo, pretraining (eye): only_surf_agent_training_10obj on four objects with materials.
 defaults:
   - /monty: graph_exp1000_e3_t3
   - /monty/motor_system_config: surface_curvature_informed_goal0

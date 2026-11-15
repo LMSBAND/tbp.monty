@@ -3,12 +3,12 @@ revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform == 'emscripten'",
-    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version >= '3.15' and sys_platform == 'linux'",
-    "python_full_version == '3.14.*' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
@@ -337,6 +337,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/76/d4/81420972a676e8ffea40450d8c8c92943e7218a78fe9b64359836cc9876b/click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6", size = 338000, upload-time = "2026-06-24T17:45:15.148Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/e2/79c688af8b210d232694e31e59da9f6ec747bae31c3f5946e4e9b98860d5/click-8.4.2-py3-none-any.whl", hash = "sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76", size = 119243, upload-time = "2026-06-24T17:45:13.73Z" },
+]
+
+[[package]]
+name = "coacd"
+version = "1.0.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/94/622a380a5c4cac78c1f19379b1d3fa193903f848311c200924309797abf8/coacd-1.0.14-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:4cd9e1f327af766f6364e79e384ebfe152780a3d8dbbd09ce0756ec14f9e1256", size = 3426003, upload-time = "2026-08-28T21:53:32.005Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/3e/e930a366ec69a966f1a55307b52d036d266314e2f6c58e72e212fdc09182/coacd-1.0.14-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1242941fc9d49ebcb0368c68f31c86e278b9a6f1a255d11da2f1668797e2626e", size = 2584591, upload-time = "2026-08-28T21:53:33.537Z" },
+    { url = "https://files.pythonhosted.org/packages/88/7c/ec7edfc77c48fe97434ae813eca7614103289105bb546952ed9a0a266ce8/coacd-1.0.14-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6c135b717af096523bbebf1fd8d326e8950c024237fe9806ad46dedd8b4c31f0", size = 2651838, upload-time = "2026-08-28T21:53:34.776Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/28/edbc4d6766fb3504bf15dabe7340e5686c72b9e3be030b3c8c40469e7af6/coacd-1.0.14-cp39-abi3-win_amd64.whl", hash = "sha256:6b548f44d9a4694cde594dc8cc8fefa678fb7c88153583be4e8b2c707de8fbbd", size = 1487726, upload-time = "2026-08-28T21:53:36.6Z" },
 ]
 
 [[package]]
@@ -2805,10 +2819,14 @@ print-version-tool = [
 simulator-mujoco = [
     { name = "mujoco" },
 ]
+touch = [
+    { name = "coacd" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'build'" },
+    { name = "coacd", marker = "extra == 'touch'" },
     { name = "colorama", marker = "extra == 'github-readme-sync-tool'" },
     { name = "deptry", marker = "extra == 'dev'" },
     { name = "docutils", marker = "extra == 'generate-api-docs-tool'", specifier = ">=0.17" },
@@ -2861,7 +2879,7 @@ requires-dist = [
     { name = "urllib3", marker = "extra == 'github-readme-sync-tool'" },
     { name = "wandb" },
 ]
-provides-extras = ["simulator-mujoco", "analysis", "build", "dev", "generate-api-docs-tool", "github-readme-sync-tool", "future-work-widget-tool", "print-version-tool"]
+provides-extras = ["simulator-mujoco", "touch", "analysis", "build", "dev", "generate-api-docs-tool", "github-readme-sync-tool", "future-work-widget-tool", "print-version-tool"]
 
 [[package]]
 name = "text-unidecode"

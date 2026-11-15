@@ -2,7 +2,7 @@
 # The fingertip matching on shape and texture: evidence_touch_shape plus roughness and vibration centroid
 # (tolerances ~3x the spread of the synthesised strokes). No grip or stiffness.
 defaults:
-  - evidence_touch_shape
+  - /monty/learning_module/evidence_touch_shape
 learning_module_0:
   feature_weights:
     finger:

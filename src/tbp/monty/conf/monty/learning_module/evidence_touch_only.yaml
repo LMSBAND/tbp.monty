@@ -2,7 +2,7 @@
 # The fingertip's evidence LM with curvature: evidence_finger plus the palpated principal curvatures
 # (the stock eye's tolerance for them).
 defaults:
-  - evidence_finger
+  - /monty/learning_module/evidence_finger
 learning_module_0:
   feature_weights:
     finger:

@@ -48,6 +48,11 @@ requires-python = '>=3.13'
 simulator_mujoco = [
     'mujoco'
 ]
+touch = [
+    # Convex decomposition of object meshes for MuJoCoSimulator(convex_decomposition=True), so
+    # that a touch sensor collides with the surface the cameras see. Imported only when used.
+    'coacd',
+]
 analysis = [
     'ipython',
     'seaborn',

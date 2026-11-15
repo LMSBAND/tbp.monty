@@ -2,7 +2,7 @@
 # camera_surf_touch with the full fingertip: the stock eye patch (first, so it steers the stock surface
 # policy) and the finger with pressure, friction, palpated curvature and recorded texture.
 defaults:
-  - camera_surf_touch
+  - /monty/sensor_module/camera_surf_touch
 sensor_module_1:
   features: [grip, stiffness, principal_curvatures, principal_curvatures_log, roughness, vibration_centroid]
   delta_thresholds:

@@ -1,5 +1,5 @@
 # @package _global_
-# Touch in MuJoCo, eval (eye): base_config_10distinctobj_surf_agent_mujoco on the four material objects.
+# Touch in MuJoCo, eval (eye): base_config_10distinctobj_surf_agent on the four material objects.
 defaults:
   - /monty: evidencegraph_exp1000_emin_t3
   - /monty/motor_system_config: surface_curvature_informed_goal1

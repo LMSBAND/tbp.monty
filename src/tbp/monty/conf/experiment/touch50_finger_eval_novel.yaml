@@ -1,0 +1,25 @@
+# @package _global_
+# Touch in MuJoCo, 50 objects, the camera-free finger alone, at three rotations outside the training set.
+defaults:
+  - /monty: evidencegraph_exp1000_emin_t3
+  - /monty/motor_system_config: touch_surface_goal1
+  - /monty/learning_module: evidence_touch_all
+  - /monty/sensor_module: touch_only_finger_texture
+  - /monty/connectivity: 1lm_touch_only
+  - /environment: mujoco_ycb_touch50
+  - /env_interface: touch50_eval_novel
+  - /env_interface/transform: touch_none
+  - /termination: any1_objectrecognition_t1000_e500_tot5000
+  - /logging: basic_info_monty_runs
+
+experiment:
+  _target_: tbp.monty.frameworks.experiments.object_recognition_experiments.MontyObjectRecognitionExperiment
+  config:
+    show_sensor_output: false
+    n_train_epochs: 1
+    n_eval_epochs: ${constants.rotations_3_count}
+    model_name_or_path: ${path.expanduser:${oc.env:MONTY_MODELS}/my_trained_models/touch50_finger_pretrain/pretrained}
+    seed: 42
+    supervised_lm_ids: []
+    logging:
+      run_name: touch50_finger_eval_novel
