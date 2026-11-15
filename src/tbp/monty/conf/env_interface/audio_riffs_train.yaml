@@ -1,0 +1,16 @@
+# @package experiment.config
+do_train: true
+train_env_interface_args:
+  object_names:
+  - chords_am
+  - chords_cm
+  - chords_cmaj
+  - sentimental
+  - swing_am
+  - swing_cm
+  - swing_maj
+  object_init_sampler:
+    _target_: tbp.monty.frameworks.environments.object_init_samplers.Predefined
+    rotations:
+    - ${np.array:[0.0, 0.0, 0.0]}
+train_env_interface_class: ${monty.class:tbp.monty.experiment.environment.OneObjectPerEpisodeInterface}
