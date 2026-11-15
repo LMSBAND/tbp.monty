@@ -1,0 +1,39 @@
+# @package experiment.config.environment
+# The stock YCB surface agent with a fingertip. "finger" is a touch-only sensor at the patch camera's
+# position: a hidden sphere that presses into the object at the agent's working distance, so the contact
+# solver's contact point, normal, force, depth and friction come back as the finger's observation (no
+# camera in it). The objects collide with their real surface (convex decomposition) and a material table
+# gives them something to feel (texture names a Penn Haptic Texture Toolkit model, felt only when the
+# simulator has a texture_path); everything else is mujoco_ycb_surf_agent.
+env_init_args:
+  data_path: ${path.expanduser:${oc.env:MONTY_DATA}/mujoco/objects/ycb}
+  convex_decomposition: true
+  materials:
+    mug:             {friction: [0.3, 0.005, 0.0001], solref: [0.005, 1.0], texture: Ceramic}     # glazed ceramic: slick, hard
+    banana:          {friction: [0.9, 0.005, 0.0001], solref: [0.05, 1.0], texture: Candle}       # waxy skin, soft
+    master_chef_can: {friction: [0.4, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}    # bare tin: hard
+    cracker_box:     {friction: [0.7, 0.005, 0.0001], solref: [0.02, 1.0], texture: Cardboard}    # cardboard: medium
+  agents:
+    - _target_: tbp.monty.simulators.mujoco.agents.SurfaceAgent
+      _partial_: true
+      agent_id: agent_id_0
+      sensor_configs:
+        patch:
+          _target_: tbp.monty.frameworks.sensors.SensorConfig
+          position: [0.0, 0.0, 0.0]
+          resolution: {width: 64, height: 64}
+          zoom: 10.0
+        view_finder:
+          _target_: tbp.monty.frameworks.sensors.SensorConfig
+          position: [0.0, 0.0, 0.03]
+          resolution: {width: 64, height: 64}
+          zoom: 1.0
+      touch:
+        _target_: tbp.monty.simulators.mujoco.agents.TouchConfig
+        sensor_id: finger
+        position: [0.0, 0.0, 0.0]   # at the patch camera
+        radius: 0.04          # the policy holds 0.025 m off the surface: ~15 mm of press
+        drag_speed: 5.0
+      position: [0.0, 1.5, 0.1]
+  raise_actuate_missing: false
+env_init_func: ${monty.class:tbp.monty.simulators.mujoco.MuJoCoSimulator}

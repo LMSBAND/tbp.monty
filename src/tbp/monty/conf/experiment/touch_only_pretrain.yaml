@@ -1,0 +1,25 @@
+# @package _global_
+# Touch in MuJoCo, pretraining, camera-free: the fingertip is the agent's only sensor and steers the policy.
+defaults:
+  - /monty: graph_exp1000_e3_t3
+  - /monty/motor_system_config: touch_surface_goal0
+  - /monty/learning_module: displacement_touch_only
+  - /monty/sensor_module: touch_only_finger
+  - /monty/connectivity: 1lm_touch_only
+  - /environment: mujoco_ycb_touch_only
+  - /env_interface: touch4_train
+  - /env_interface/transform: touch_none
+  - /termination: any1_train_steps_3_1000_tot6000
+  - /logging: silent_warning_train
+
+experiment:
+  _target_: tbp.monty.frameworks.experiments.pretraining_experiments.MontySupervisedObjectPretrainingExperiment
+  config:
+    show_sensor_output: false
+    n_train_epochs: ${constants.rotations_all_count}
+    n_eval_epochs: 1
+    model_name_or_path: ''
+    seed: 42
+    supervised_lm_ids: all
+    logging:
+      run_name: touch_only_pretrain

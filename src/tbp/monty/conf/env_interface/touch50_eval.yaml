@@ -1,0 +1,9 @@
+# @package experiment.config
+# The fifty objects at the stock 3 eval rotations.
+do_eval: true
+eval_env_interface_args:
+  object_names: [cracker_box, sugar_box, pudding_box, gelatin_box, master_chef_can, potted_meat_can, tomato_soup_can, tuna_fish_can, bleach_cleanser, mustard_bottle, windex_bottle, pitcher_base, bowl, plate, spatula, large_marker, power_drill, extra_large_clamp, large_clamp, medium_clamp, rubiks_cube, mug, adjustable_wrench, hammer, padlock, skillet, skillet_lid, knife, fork, spoon, scissors, flat_screwdriver, phillips_screwdriver, wood_block, foam_brick, sponge, banana, apple, plum, pear, peach, lemon, orange, strawberry, baseball, softball, tennis_ball, racquetball, golf_ball, mini_soccer_ball]
+  object_init_sampler:
+    _target_: tbp.monty.frameworks.environments.object_init_samplers.Predefined
+    rotations: ${constants.rotations_3}
+eval_env_interface_class: ${monty.class:tbp.monty.experiment.environment.OneObjectPerEpisodeInterface}

@@ -1,0 +1,25 @@
+# @package _global_
+# Touch in MuJoCo, eval (finger): base_config_10distinctobj_surf_agent_mujoco on the four material objects.
+defaults:
+  - /monty: evidencegraph_exp1000_emin_t3
+  - /monty/motor_system_config: surface_curvature_informed_goal1
+  - /monty/learning_module: evidence_finger
+  - /monty/sensor_module: camera_surf_finger
+  - /monty/connectivity: 1lm_finger
+  - /environment: mujoco_ycb_touch_agent
+  - /env_interface: touch4_eval
+  - /env_interface/transform: missing_depthto3d_sensor2_semantic0_clip
+  - /termination: any1_objectrecognition_t1000_e500_tot5000
+  - /logging: basic_info_monty_runs
+
+experiment:
+  _target_: tbp.monty.frameworks.experiments.object_recognition_experiments.MontyObjectRecognitionExperiment
+  config:
+    show_sensor_output: false
+    n_train_epochs: 1
+    n_eval_epochs: ${constants.rotations_3_count}
+    model_name_or_path: ${path.expanduser:${oc.env:MONTY_MODELS}/my_trained_models/touch_finger_pretrain/pretrained}
+    seed: 42
+    supervised_lm_ids: []
+    logging:
+      run_name: touch_finger_eval

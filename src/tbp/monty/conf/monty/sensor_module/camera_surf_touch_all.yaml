@@ -1,0 +1,12 @@
+# @package experiment.config.monty_config.sensor_modules
+# camera_surf_touch with the full fingertip: the stock eye patch (first, so it steers the stock surface
+# policy) and the finger with pressure, friction, palpated curvature and recorded texture.
+defaults:
+  - camera_surf_touch
+sensor_module_1:
+  features: [grip, stiffness, principal_curvatures, principal_curvatures_log, roughness, vibration_centroid]
+  delta_thresholds:
+    pose_vectors: ${np.list_eval:[np.pi / 4, np.pi * 2, np.pi * 2]}
+    principal_curvatures_log: [2, 2]
+    roughness: 0.1
+    vibration_centroid: 30

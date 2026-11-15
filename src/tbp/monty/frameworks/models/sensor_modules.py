@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from enum import Enum
 from typing import Any, ClassVar, Protocol, cast
 
@@ -146,7 +147,10 @@ class ObservationProcessor:
         "coords_for_TM",
         "edge_strength",
         "coherence",
+        "grip",
+        "stiffness",
     ]
+    TOUCH_FEATURES: ClassVar[list[str]] = ["grip", "stiffness"]
 
     def __init__(
         self,
@@ -219,6 +223,10 @@ class ObservationProcessor:
 
         x, y, z, semantic_id = obs_3d[center_id]
         on_object = semantic_id > 0
+        # A touch sensor is only "on object" while its fingertip is in contact.
+        wants_touch = any(f in self.TOUCH_FEATURES for f in self._features)
+        if wants_touch:
+            on_object = bool(on_object and observation.get("touching", False))
         if on_object or (self._is_surface_sm and features["object_coverage"] > 0):
             (
                 features,
@@ -237,6 +245,16 @@ class ObservationProcessor:
         else:
             valid_signals = False
             morphological_features = {}
+
+        if wants_touch and on_object:
+            # Straight from the contact solver: how grippy and how hard the surface is.
+            if "grip" in self._features:
+                features["grip"] = float(observation["grip"])
+            if "stiffness" in self._features:
+                depth_mm = float(observation["touch_depth"]) * 1e3
+                features["stiffness"] = (
+                    float(observation["press"]) / depth_mm if depth_mm > 1e-6 else 0.0
+                )  # N/mm
 
         if "on_object" in self._features:
             morphological_features["on_object"] = float(on_object)
@@ -605,6 +623,170 @@ class CameraSM(SensorModule):
 
         self.processed_obs.append(percept.__dict__)
 
+        return percept
+
+
+class TouchSM(SensorModule):
+    """A fingertip as a sensor module: no camera in it.
+
+    Reads the touch fields a simulator puts in its sensor's observation (see the
+    MuJoCo `TouchConfig`): the percept's location is the contact point, its surface
+    normal is the contact normal, and its features are what the surface feels like
+    there, ``grip`` (friction coefficient) and ``stiffness`` (N/mm). The two tangent
+    axes are not intrinsic to the object (a fingertip has no curvature directions),
+    so the pose is never "fully defined" and the learning module matches on the
+    normal only. The sensor is on the object exactly when it is touching.
+
+    If the fingertip palpates (``TouchConfig.palpate``), the observation carries the
+    principal curvatures and directions it felt. The directions then complete the
+    pose (fully defined when the curvatures differ by ``pc1_is_pc2_threshold``, as
+    in `CameraSM`) and ``principal_curvatures`` / ``principal_curvatures_log`` can
+    be features.
+
+    If the touched object has a recorded texture, the observation carries the
+    vibration of a stroke over it, and ``roughness`` (log10 RMS acceleration) and
+    ``vibration_centroid`` (Hz, the spectrum's centre of mass) can be features.
+
+    The percept also carries what a surface policy needs to steer by touch alone:
+    ``object_coverage`` (1 touching, 0 not), and ``min_depth`` = ``mean_depth`` =
+    the distance from the fingertip's centre out to the surface. With this module
+    first, the surface policy needs no camera.
+    """
+
+    def __init__(
+        self,
+        sensor_module_id: str,
+        features: Sequence[str] = ("grip", "stiffness"),
+        save_raw_obs: bool = False,  # noqa: ARG002  (kept for config compatibility)
+        noise_params: dict[str, Any] | None = None,
+        delta_thresholds: dict[str, Any] | None = None,
+        pc1_is_pc2_threshold: float = 10,
+    ) -> None:
+        super().__init__()
+        self.sensor_module_id = sensor_module_id
+        self.features = list(features)
+        self._pc1_is_pc2_threshold = pc1_is_pc2_threshold
+        self.state: SensorState | None = None
+        self.processed_obs: list[dict[str, Any]] = []
+        self._message_noise: MessageNoise = (
+            DefaultMessageNoise(noise_params=noise_params)
+            if noise_params
+            else NoMessageNoise()
+        )
+        self._percept_filter: PerceptFilter = (
+            FeatureChangeFilter(delta_thresholds=delta_thresholds)
+            if delta_thresholds
+            else PassthroughPerceptFilter()
+        )
+
+    def reset(self) -> None:
+        self._percept_filter.reset()
+        self.processed_obs = []
+
+    def update_state(self, agent: AgentState) -> None:
+        sensor = agent.sensors[SensorID(self.sensor_module_id)]
+        self.state = SensorState(
+            position=agent.position
+            + qt.rotate_vectors(agent.rotation, sensor.position),
+            rotation=agent.rotation * sensor.rotation,
+        )
+
+    def state_dict(self) -> Memento:
+        return {"processed_observations": self.processed_obs}
+
+    def step(
+        self,
+        ctx: RuntimeContext,
+        observation: SensorObservation,
+        motor_only_step: bool = False,
+    ) -> Message:
+        touching = bool(observation.get("touching", False))
+        features: dict[str, Any] = {}
+        # a press that slid off the edge leaves the curvature unread: steer by this
+        # touch, but send the learning module only touches with every feature
+        wants_curvature = bool(
+            {"principal_curvatures", "principal_curvatures_log"} & set(self.features)
+        )
+        complete = touching and (
+            not wants_curvature or bool(observation.get("touch_curvature_valid", False))
+        )
+        if touching:
+            location = np.asarray(observation["touch_pos"], dtype=np.float64)
+            normal = np.asarray(observation["touch_normal"], dtype=np.float64)
+            normal = normal / max(np.linalg.norm(normal), 1e-12)
+            # any orthonormal pair completes the frame; it carries no object information
+            helper = (
+                np.array([1.0, 0.0, 0.0])
+                if abs(normal[0]) < 0.9
+                else np.array([0.0, 1.0, 0.0])
+            )
+            tangent_1 = np.cross(normal, helper)
+            tangent_1 /= np.linalg.norm(tangent_1)
+            tangent_2 = np.cross(normal, tangent_1)
+            pose_vectors = np.vstack([normal, tangent_1, tangent_2])
+            pose_fully_defined = False
+            if observation.get("touch_curvature_valid", False):
+                k = np.asarray(observation["touch_curvatures"], dtype=np.float64)
+                dirs = np.asarray(observation["touch_curvature_dirs"], dtype=np.float64)
+                pose_vectors = np.vstack([normal, dirs[0], dirs[1]])
+                pose_fully_defined = bool(
+                    abs(k[0] - k[1]) >= self._pc1_is_pc2_threshold
+                )
+                if "principal_curvatures" in self.features:
+                    features["principal_curvatures"] = k
+                if "principal_curvatures_log" in self.features:
+                    features["principal_curvatures_log"] = log_sign(k)
+            gap = float(observation.get("touch_gap", 0.0))
+            features |= {"object_coverage": 1.0, "min_depth": gap, "mean_depth": gap}
+            if "vibration" in observation:
+                # what the stroke felt: how hard it buzzes and how high
+                v = np.asarray(observation["vibration"], dtype=np.float64)
+                if "roughness" in self.features:
+                    features["roughness"] = float(
+                        np.log10(max(np.sqrt(np.mean(v**2)), 1e-9))
+                    )
+                if "vibration_centroid" in self.features:
+                    spectrum = np.abs(np.fft.rfft(v * np.hanning(len(v)))) ** 2
+                    freqs = np.fft.rfftfreq(len(v), 1.0 / 1000.0)
+                    features["vibration_centroid"] = float(
+                        spectrum @ freqs / max(spectrum.sum(), 1e-12)
+                    )
+            if "grip" in self.features:
+                features["grip"] = float(observation["grip"])
+            if "stiffness" in self.features:
+                depth_mm = float(observation["touch_depth"]) * 1e3
+                features["stiffness"] = (
+                    float(observation["press"]) / depth_mm if depth_mm > 1e-6 else 0.0
+                )
+        else:
+            location = (
+                np.asarray(self.state.position, dtype=np.float64)
+                if self.state is not None
+                else np.zeros(3)
+            )
+            pose_vectors = np.eye(3)
+            pose_fully_defined = False
+            features |= {"object_coverage": 0.0}
+
+        percept = Message(
+            location=location,
+            morphological_features={
+                "pose_vectors": SurfacePoseVectors(pose_vectors),
+                "pose_fully_defined": pose_fully_defined,
+                "on_object": float(touching),
+            },
+            non_morphological_features=features,
+            confidence=1.0,
+            pass_message=True,
+            process_features_in_lm=complete,
+            sender_id=self.sensor_module_id,
+            sender_type="SM",
+        )
+        percept = self._message_noise(percept, rng=ctx.rng)
+        if motor_only_step:
+            percept.pass_message = False
+        percept = self._percept_filter(percept)
+        self.processed_obs.append(percept.__dict__)
         return percept
 
 

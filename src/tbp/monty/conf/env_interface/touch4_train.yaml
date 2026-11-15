@@ -1,0 +1,9 @@
+# @package experiment.config
+# Four YCB objects with a material table (see environment/mujoco_ycb_touch_agent), all 14 stock rotations.
+do_train: true
+train_env_interface_args:
+  object_names: [mug, banana, master_chef_can, cracker_box]
+  object_init_sampler:
+    _target_: tbp.monty.frameworks.environments.object_init_samplers.Predefined
+    rotations: ${constants.rotations_all}
+train_env_interface_class: ${monty.class:tbp.monty.experiment.environment.OneObjectPerEpisodeInterface}

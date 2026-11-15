@@ -1,0 +1,3 @@
+# @package experiment.config.environment
+# No cameras on the agent: nothing to turn from depth into 3D.
+transform: null

@@ -1,0 +1,29 @@
+# @package experiment.config.environment
+# mujoco_ycb_touch50 with the eye put back: the stock surface agent's patch camera and view finder, and the
+# fingertip (palpating, feeling the recorded textures) at the patch camera.
+defaults:
+  - mujoco_ycb_touch50
+env_init_args:
+  agents:
+    - _target_: tbp.monty.simulators.mujoco.agents.SurfaceAgent
+      _partial_: true
+      agent_id: agent_id_0
+      sensor_configs:
+        patch:
+          _target_: tbp.monty.frameworks.sensors.SensorConfig
+          position: [0.0, 0.0, 0.0]
+          resolution: {width: 64, height: 64}
+          zoom: 10.0
+        view_finder:
+          _target_: tbp.monty.frameworks.sensors.SensorConfig
+          position: [0.0, 0.0, 0.03]
+          resolution: {width: 64, height: 64}
+          zoom: 1.0
+      touch:
+        _target_: tbp.monty.simulators.mujoco.agents.TouchConfig
+        sensor_id: finger
+        position: [0.0, 0.0, 0.0]
+        radius: 0.04
+        drag_speed: 5.0
+        palpate: 0.01
+      position: [0.0, 1.5, 0.1]

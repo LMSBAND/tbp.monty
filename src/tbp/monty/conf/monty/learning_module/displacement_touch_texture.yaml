@@ -1,0 +1,10 @@
+# @package experiment.config.monty_config.learning_modules
+# Pretraining LM for the camera-free fingertip with every touch feature (pressure, friction, curvature,
+# texture); the eval LMs choose which of them to match on.
+defaults:
+  - displacement_touch_only
+learning_module_0:
+  graph_delta_thresholds:
+    finger:
+      roughness: 0.1
+      vibration_centroid: 30

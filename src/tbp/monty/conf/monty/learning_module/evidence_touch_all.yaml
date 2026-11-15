@@ -1,0 +1,13 @@
+# @package experiment.config.monty_config.learning_modules
+# The fingertip on everything it feels: pressure, friction, curvature and texture.
+defaults:
+  - evidence_touch_only
+learning_module_0:
+  feature_weights:
+    finger:
+      roughness: 1.0
+      vibration_centroid: 1.0
+  tolerances:
+    finger:
+      roughness: 0.1
+      vibration_centroid: 30

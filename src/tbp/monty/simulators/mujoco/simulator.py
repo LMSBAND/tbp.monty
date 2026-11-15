@@ -9,15 +9,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, Self, override
 
+import numpy as np
 from mujoco import (
     MjData,
     MjModel,
     MjsBody,
+    MjsGeom,
     MjSpec,
     Renderer,
     mj_forward,
@@ -51,6 +54,7 @@ from tbp.monty.simulators.mujoco.objects import (
     ObjectMetadata,
     load_object_metadata,
 )
+from tbp.monty.simulators.mujoco.textures import HaTTTexture, load_texture
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -104,12 +108,67 @@ LoadedObjectKey = tuple[str, VectorXYZ]
 Includes scale since MuJoCo stores scale on the mesh, and not the geom."""
 
 
+def convex_pieces(object_type: str, model_path: Path) -> list[Path]:
+    """The convex pieces of a mesh, as OBJ files, decomposed once with CoACD and cached.
+
+    CoACD is an optional dependency (``pip install coacd``), imported only when a
+    mesh has not been decomposed yet.
+
+    Returns:
+        The piece files, in a stable order.
+    """
+    cache_root = Path(os.environ.get("XDG_CACHE_HOME", "~/.cache")).expanduser()
+    cache = cache_root / "tbp.monty" / "coacd" / object_type
+    done = cache / "done"
+    if done.exists():
+        return sorted(cache.glob("piece_*.obj"))
+    import coacd  # noqa: PLC0415  (optional dependency, imported when used)
+
+    vertices: list[list[float]] = []
+    faces: list[list[int]] = []
+    with Path(model_path).open() as f:
+        for line in f:
+            if line.startswith("v "):
+                vertices.append([float(x) for x in line.split()[1:4]])
+            elif line.startswith("f "):
+                idx = [int(t.split("/")[0]) - 1 for t in line.split()[1:]]
+                for k in range(1, len(idx) - 1):  # fan-triangulate
+                    faces.append([idx[0], idx[k], idx[k + 1]])
+    logger.info(f"CoACD: decomposing {object_type} ({len(faces)} faces), once")
+    pieces = coacd.run_coacd(
+        coacd.Mesh(
+            np.asarray(vertices, dtype=np.float64), np.asarray(faces, dtype=np.int64)
+        ),
+        threshold=0.03,
+        max_convex_hull=48,
+        preprocess_mode="auto",
+        mcts_iterations=100,
+        max_ch_vertex=128,
+    )
+    cache.mkdir(parents=True, exist_ok=True)
+    for i, (v, fc) in enumerate(pieces):
+        with Path(cache / f"piece_{i:03d}.obj").open("w") as out:
+            out.writelines(f"v {x} {y} {z}\n" for x, y, z in v)
+            out.writelines(f"f {a + 1} {b + 1} {c + 1}\n" for a, b, c in fc)
+    done.touch()
+    logger.info(
+        f"CoACD: {object_type} -> {len(pieces)} convex pieces, cached in {cache}"
+    )
+    return sorted(cache.glob("piece_*.obj"))
+
+
 @dataclass
 class ModelMetadata:
-    """Dataclass to store custom object mesh and material names."""
+    """Dataclass to store custom object mesh and material names.
+
+    `collision_mesh_names` are the convex pieces the object collides with when the
+    simulator was built with `convex_decomposition=True`; empty means MuJoCo's default,
+    the convex hull of the visual mesh.
+    """
 
     mesh_name: str
     material_name: str
+    collision_mesh_names: tuple[str, ...] = ()
 
 
 class MuJoCoAgentFactory(Protocol):
@@ -198,6 +257,9 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
         agents: Sequence[MuJoCoAgentFactory] | None = None,
         data_path: str | Path | None = None,
         raise_actuate_missing: bool = True,
+        materials: Mapping[str, Mapping[str, Sequence[float] | str]] | None = None,
+        convex_decomposition: bool = False,
+        texture_path: str | Path | None = None,
     ) -> None:
         """Constructs a MuJoCo simulated environment.
 
@@ -208,7 +270,29 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
             data_path: the path to where custom object data should be loaded from.
             raise_actuate_missing: whether to raise an exception when an agent
               does not have an actuate method for an Action.
+            materials: optional physical properties per object type, applied to the
+              object's geom when it is added. Keys are object type names (e.g. "mug"),
+              values map MuJoCo geom contact attributes to their values:
+              ``friction`` (sliding, torsional, rolling), ``solref`` (time constant,
+              damping ratio: a smaller time constant is a stiffer contact) and
+              ``solimp``. Objects without an entry keep MuJoCo's defaults. These are
+              what a touch sensor (see `TouchConfig`) feels.
+            convex_decomposition: MuJoCo collides meshes by their convex hull, which
+              on a mug or a banana sits well inside the real surface. With this set,
+              each custom object is split into convex pieces (CoACD, once, cached under
+              ``~/.cache/tbp.monty/coacd``) and collides with those, so a touch sensor
+              meets the surface the cameras see. Rendering is unchanged.
+            texture_path: directory of Penn Haptic Texture Toolkit models
+              (``Models_<material>.xml``, not distributed with this repository). A
+              ``materials`` entry may then name one as ``texture`` (e.g.
+              ``texture: Ceramic``), and a touch sensor stroking that object feels
+              its recorded vibration (see `textures`).
         """
+        self._materials = dict(materials) if materials else {}
+        self._convex_decomposition = convex_decomposition
+        self._texture_path = str(texture_path) if texture_path else None
+        self._geom_object_type: dict[str, str] = {}
+        self._collision_geom_names: set[str] = set()
         self._data_path = Path(data_path) if data_path else None
         self._raise_actuate_missing = raise_actuate_missing
         self._renderers = {}
@@ -339,9 +423,10 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
         Note: this does NOT reset the agents to their initial positions. Call
         `reset()` to do that.
         """
-        for name in self._object_names:
+        for name in self._object_names | self._collision_geom_names:
             geom = self.spec.geom(name)
             self.spec.delete(geom)
+        self._collision_geom_names = set()
         self._remove_assets()
         self.id_to_semantic_id = self._default_id_mapping()
         self._object_count = 0
@@ -357,6 +442,7 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
         for texture in self.spec.textures:
             self.spec.delete(texture)
         self._loaded_custom_types = {}
+        self._geom_object_type = {}
 
     @override
     def add_object(
@@ -431,7 +517,7 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
             self._load_custom_object(object_key)
 
         metadata = self._loaded_custom_types[object_key]
-        self.spec.worldbody.add_geom(
+        geom = self.spec.worldbody.add_geom(
             name=obj_name,
             type=mjtGeom.mjGEOM_MESH,
             meshname=metadata.mesh_name,
@@ -439,6 +525,46 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
             pos=position,
             quat=rotation,
         )
+        self._apply_material(geom, object_type)
+        self._geom_object_type[obj_name] = object_type
+        if metadata.collision_mesh_names:
+            # the cameras see the visual mesh; the finger touches the convex pieces
+            geom.contype = 0
+            geom.conaffinity = 0
+            for i, piece_name in enumerate(metadata.collision_mesh_names):
+                piece = self.spec.worldbody.add_geom(
+                    name=f"{obj_name}_c{i}",
+                    type=mjtGeom.mjGEOM_MESH,
+                    meshname=piece_name,
+                    pos=position,
+                    quat=rotation,
+                    group=3,  # not rendered
+                    rgba=(0.0, 0.0, 0.0, 0.0),
+                )
+                self._apply_material(piece, object_type)
+                self._geom_object_type[piece.name] = object_type
+                self._collision_geom_names.add(piece.name)
+
+    def texture_of_geom(self, geom_id: int) -> HaTTTexture | None:
+        """The recorded texture of the object a geom belongs to.
+
+        Returns:
+            The texture, or None if the object has none.
+        """
+        object_type = self._geom_object_type.get(self.model.geom(geom_id).name)
+        props = self._materials.get(object_type, {}) if object_type else {}
+        if self._texture_path is None or "texture" not in props:
+            return None
+        return load_texture(self._texture_path, str(props["texture"]))
+
+    def _apply_material(self, geom: MjsGeom, object_type: str) -> None:
+        """Sets the geom's contact properties from the `materials` table, if any."""
+        props = self._materials.get(object_type)
+        if not props:
+            return
+        for attr in ("friction", "solref", "solimp"):
+            if attr in props:
+                setattr(geom, attr, tuple(props[attr]))
 
     def _load_custom_object(self, object_key: LoadedObjectKey) -> None:
         """Loads a custom object from the data_path into the spec.
@@ -510,9 +636,23 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
             scale=actual_scale,
         )
 
+        collision_mesh_names: list[str] = []
+        if self._convex_decomposition:
+            for i, piece in enumerate(convex_pieces(object_type, model_path)):
+                piece_name = f"{obj_name_base}_c{i}"
+                self.spec.add_mesh(
+                    name=piece_name,
+                    file=str(piece),
+                    refquat=metadata.refquat,
+                    refpos=metadata.refpos,
+                    scale=actual_scale,
+                )
+                collision_mesh_names.append(piece_name)
+
         self._loaded_custom_types[object_key] = ModelMetadata(
             mesh_name=mesh_name,
             material_name=material_name,
+            collision_mesh_names=tuple(collision_mesh_names),
         )
 
     def _add_primitive_object(
@@ -563,13 +703,14 @@ class MuJoCoSimulator(SimulatedObjectEnvironment):
             )
 
         # TODO: should we encapsulate primitive objects into bodies?
-        world_body.add_geom(
+        geom = world_body.add_geom(
             name=obj_name,
             type=geom_type,
             size=scale,
             pos=position,
             quat=rotation_quat,
         )
+        self._apply_material(geom, object_type)
 
     @property
     def observations(self) -> Observations:

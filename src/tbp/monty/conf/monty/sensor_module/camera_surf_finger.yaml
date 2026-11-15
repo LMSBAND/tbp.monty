@@ -1,0 +1,25 @@
+# @package experiment.config.monty_config.sensor_modules
+# The fingertip alone. The patch camera stays as sensor module 0 because the stock surface policy steers
+# by it, but no learning module reads it: only the finger (TouchSM, no camera: location and normal from
+# the contact, features grip and stiffness) feeds the LM.
+sensor_module_0:
+  _target_: tbp.monty.frameworks.models.sensor_modules.CameraSM
+  is_surface_sm: true
+  sensor_module_id: patch
+  features: [pose_vectors, pose_fully_defined, on_object, object_coverage, min_depth, mean_depth, principal_curvatures]
+  save_raw_obs: false
+sensor_module_1:
+  _target_: tbp.monty.frameworks.models.sensor_modules.TouchSM
+  sensor_module_id: finger
+  features: [grip, stiffness]
+  delta_thresholds:
+    on_object: 0
+    n_steps: 20
+    grip: 0.05
+    stiffness: 0.5
+    distance: 0.01
+sensor_module_2:
+  _target_: tbp.monty.experiment.sensor_module.ExperimentSensorModule
+  sensor_module_id: view_finder
+  sensor_id: view_finder
+  transforms: []

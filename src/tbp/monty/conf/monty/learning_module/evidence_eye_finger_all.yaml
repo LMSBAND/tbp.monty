@@ -1,0 +1,15 @@
+# @package experiment.config.monty_config.learning_modules
+# evidence_eye_finger with the fingertip matching on everything it feels (as evidence_touch_all).
+defaults:
+  - evidence_eye_finger
+learning_module_1:
+  feature_weights:
+    finger:
+      principal_curvatures_log: ${np.ones:2}
+      roughness: 1.0
+      vibration_centroid: 1.0
+  tolerances:
+    finger:
+      principal_curvatures_log: ${np.ones:2}
+      roughness: 0.1
+      vibration_centroid: 30

@@ -588,7 +588,8 @@ class JumpToGoal(MotorPolicy):
         target_agent_vec = goal.morphological_features["pose_vectors"].direction
 
         yaw_angle = math.atan2(-target_agent_vec[0], -target_agent_vec[2])
-        pitch_angle = math.asin(target_agent_vec[1])
+        # Clipped: rounding can put a unit vector's component just past 1.
+        pitch_angle = math.asin(np.clip(target_agent_vec[1], -1.0, 1.0))
 
         # Should rotate by pitch degrees around x, and by yaw degrees around y (and
         # no change about z, which would correspond to roll)
@@ -857,7 +858,8 @@ class InformedPolicy(BasePolicy):
         target_agent_vec = goal.morphological_features["pose_vectors"].direction
 
         yaw_angle = math.atan2(-target_agent_vec[0], -target_agent_vec[2])
-        pitch_angle = math.asin(target_agent_vec[1])
+        # Clipped: rounding can put a unit vector's component just past 1.
+        pitch_angle = math.asin(np.clip(target_agent_vec[1], -1.0, 1.0))
 
         # Should rotate by pitch degrees around x, and by yaw degrees around y (and
         # no change about z, which would correspond to roll)
@@ -2525,3 +2527,126 @@ def projected_vec_from_angle(angle):
 
     # TODO: consider using an np.array
     return [np.cos(angle - np.pi / 2), np.sin(angle + np.pi / 2), 0]
+
+
+class TouchSurfacePolicy(SurfacePolicyCurvatureInformed):
+    """The curvature-informed surface policy steered by a fingertip, no camera.
+
+    The first sensor module is a `TouchSM`: its percept carries the contact normal,
+    the principal curvature directions felt by palpation, ``object_coverage``
+    (1 touching, 0 not) and ``min_depth`` / ``mean_depth`` (from the fingertip's
+    centre out to the surface), which is all the parent policy steers by. What the
+    parent did with the view finder, this does by touch:
+
+    - finding the object: reach forward in steps shorter than the fingertip's
+      radius until it touches; if ``max_reach`` passes with nothing, back off and
+      swing ``search_degrees`` around a point ahead (as the parent's search), then
+      reach again.
+    - falling off it: go back to the last pose where the finger touched (the arm
+      knows where it was) and take a fresh heading.
+    - hypothesis jumps: undone when the finger lands on nothing, or inside.
+    """
+
+    def __init__(
+        self,
+        touch_sensor_id: str = "finger",
+        reach_step: float = 0.02,
+        max_reach: float = 0.3,
+        search_degrees: float = 30.0,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.touch_sensor_id = SensorID(touch_sensor_id)
+        self.reach_step = reach_step
+        self.max_reach = max_reach
+        self.search_degrees = search_degrees
+        self._init_TouchSurfacePolicy()
+
+    def _init_TouchSurfacePolicy(self) -> None:  # noqa: N802
+        self._reached = 0.0
+        self._last_touch_pose: tuple | None = None
+        self.slips = 0
+
+    def reset(self) -> None:
+        super().reset()
+        self._init_TouchSurfacePolicy()
+
+    def _finger(self, observations: Observations) -> dict:
+        return observations[self.agent_id][self.touch_sensor_id]
+
+    def __call__(
+        self,
+        ctx: RuntimeContext,
+        observations: Observations,
+        state: MotorSystemState,
+        percept: Message,
+        goal: Goal | None,
+    ) -> MotorPolicyResult:
+        if (
+            percept.get_feature_by_name("object_coverage") >= 1.0
+            and not self._is_jumping
+        ):
+            agent = state[self.agent_id]
+            self._last_touch_pose = (agent.position, agent.rotation)
+        return super().__call__(ctx, observations, state, percept, goal)
+
+    def _touch_object(
+        self,
+        ctx: RuntimeContext,  # noqa: ARG002
+        observations: Observations,
+        view_sensor_id: SensorID,  # noqa: ARG002  (no view finder: the finger)
+        state: MotorSystemState,  # noqa: ARG002
+    ) -> MoveForward | OrientHorizontal | OrientVertical | SetAgentPose:
+        finger = self._finger(observations)
+        if finger["touching"]:
+            self.attempting_to_find_object = False
+            self._reached = 0.0
+            return MoveForward(
+                agent_id=self.agent_id,
+                distance=float(finger["touch_gap"]) - self.desired_object_distance,
+            )
+
+        self.attempting_to_find_object = True
+        if self._last_touch_pose is not None:
+            # slipped off: back to where it last touched, and a new heading
+            self.slips += 1
+            location, rotation = self._last_touch_pose
+            self._last_touch_pose = None
+            self.tangential_angle = None
+            self.reset_pc_buffers()
+            return SetAgentPose(
+                agent_id=self.agent_id,
+                location=location,
+                rotation_quat=tuple(qt.as_float_array(rotation)),
+            )
+
+        if self._reached < self.max_reach:
+            self._reached += self.reach_step
+            return MoveForward(agent_id=self.agent_id, distance=self.reach_step)
+
+        # reached as far as it goes and felt nothing: come back, swing, reach again
+        back = self._reached
+        self._reached = 0.0
+        radius = self.desired_object_distance * 4
+        theta = np.radians(self.search_degrees)
+        self.touch_search_amount += self.search_degrees
+        if self.touch_search_amount >= 360:
+            return OrientVertical(
+                agent_id=self.agent_id,
+                rotation_degrees=self.search_degrees,
+                down_distance=np.tan(theta) * radius,
+                forward_distance=radius * (1 - np.cos(theta)) / np.cos(theta) - back,
+            )
+        return OrientHorizontal(
+            agent_id=self.agent_id,
+            rotation_degrees=self.search_degrees,
+            left_distance=np.tan(theta) * radius,
+            forward_distance=radius * (1 - np.cos(theta)) / np.cos(theta) - back,
+        )
+
+    def _should_undo_jump(self, observations: Observations) -> bool:
+        finger = self._finger(observations)
+        should_undo = (not finger["touching"]) or float(finger["touch_gap"]) <= 0.0
+        if should_undo:
+            logger.debug("Hypothesis jump touched nothing, or landed inside")
+        return should_undo

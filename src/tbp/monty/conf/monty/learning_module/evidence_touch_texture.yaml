@@ -1,0 +1,14 @@
+# @package experiment.config.monty_config.learning_modules
+# The fingertip matching on shape and texture: evidence_touch_shape plus roughness and vibration centroid
+# (tolerances ~3x the spread of the synthesised strokes). No grip or stiffness.
+defaults:
+  - evidence_touch_shape
+learning_module_0:
+  feature_weights:
+    finger:
+      roughness: 1.0
+      vibration_centroid: 1.0
+  tolerances:
+    finger:
+      roughness: 0.1
+      vibration_centroid: 30

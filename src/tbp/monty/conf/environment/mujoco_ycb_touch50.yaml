@@ -1,0 +1,59 @@
+# @package experiment.config.environment
+# mujoco_ycb_touch_only_texture on 50 YCB objects (all but the lettered variants, chain, dice and the peg
+# test). Materials by what the objects are: friction, contact stiffness (solref time constant: smaller is
+# harder) and a Penn Haptic Texture Toolkit model. Many share a material (four cardboard boxes, four tin
+# cans, a dozen plastics), so for those only shape tells them apart.
+defaults:
+  - mujoco_ycb_touch_only_texture
+env_init_args:
+  materials:
+    cracker_box:          {friction: [0.7, 0.005, 0.0001], solref: [0.02, 1.0], texture: Cardboard}   # cardboard
+    sugar_box:            {friction: [0.7, 0.005, 0.0001], solref: [0.02, 1.0], texture: Cardboard}   # cardboard
+    pudding_box:          {friction: [0.7, 0.005, 0.0001], solref: [0.02, 1.0], texture: Cardboard}   # cardboard
+    gelatin_box:          {friction: [0.7, 0.005, 0.0001], solref: [0.02, 1.0], texture: Cardboard}   # cardboard
+    master_chef_can:      {friction: [0.4, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}   # bare tin
+    potted_meat_can:      {friction: [0.4, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}   # tin
+    tomato_soup_can:      {friction: [0.4, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}   # tin
+    tuna_fish_can:        {friction: [0.4, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}   # tin
+    bleach_cleanser:      {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # HDPE bottle
+    mustard_bottle:       {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic bottle
+    windex_bottle:        {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic bottle
+    pitcher_base:         {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic pitcher
+    bowl:                 {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic bowl
+    plate:                {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic plate
+    spatula:              {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic spatula
+    large_marker:         {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic marker
+    power_drill:          {friction: [0.45, 0.005, 0.0001], solref: [0.01, 1.0], texture: Textured Rubber}   # plastic + rubber grip
+    extra_large_clamp:    {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic clamp
+    large_clamp:          {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic clamp
+    medium_clamp:         {friction: [0.35, 0.005, 0.0001], solref: [0.01, 1.0], texture: ABS Plastic}   # plastic clamp
+    rubiks_cube:          {friction: [0.3, 0.005, 0.0001], solref: [0.01, 1.0], texture: Vinyl 1}   # stickered plastic
+    mug:                  {friction: [0.3, 0.005, 0.0001], solref: [0.005, 1.0], texture: Ceramic}   # glazed ceramic: slick, hard
+    adjustable_wrench:    {friction: [0.35, 0.005, 0.0001], solref: [0.005, 1.0], texture: Metal Shelving}   # steel
+    hammer:               {friction: [0.35, 0.005, 0.0001], solref: [0.005, 1.0], texture: Metal Shelving}   # steel head
+    padlock:              {friction: [0.35, 0.005, 0.0001], solref: [0.005, 1.0], texture: Metal Shelving}   # steel
+    skillet:              {friction: [0.35, 0.005, 0.0001], solref: [0.005, 1.0], texture: Textured Metal}   # cast iron
+    skillet_lid:          {friction: [0.35, 0.005, 0.0001], solref: [0.005, 1.0], texture: Metal Shelving}   # steel lid
+    knife:                {friction: [0.3, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}   # stainless
+    fork:                 {friction: [0.3, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}   # stainless
+    spoon:                {friction: [0.3, 0.005, 0.0001], solref: [0.005, 1.0], texture: Aluminum}   # stainless
+    scissors:             {friction: [0.35, 0.005, 0.0001], solref: [0.008, 1.0], texture: ABS Plastic}   # plastic handles
+    flat_screwdriver:     {friction: [0.35, 0.005, 0.0001], solref: [0.008, 1.0], texture: ABS Plastic}   # plastic handle
+    phillips_screwdriver: {friction: [0.35, 0.005, 0.0001], solref: [0.008, 1.0], texture: ABS Plastic}   # plastic handle
+    wood_block:           {friction: [0.5, 0.005, 0.0001], solref: [0.008, 1.0], texture: Wood}   # bare wood
+    foam_brick:           {friction: [0.8, 0.005, 0.0001], solref: [0.1, 1.0], texture: Pink Foam}   # foam: very soft
+    sponge:               {friction: [0.9, 0.005, 0.0001], solref: [0.1, 1.0], texture: Scouring Pad}   # sponge: very soft
+    banana:               {friction: [0.9, 0.005, 0.0001], solref: [0.05, 1.0], texture: Candle}   # waxy skin, soft
+    apple:                {friction: [0.6, 0.005, 0.0001], solref: [0.03, 1.0], texture: Candle}   # waxy skin
+    plum:                 {friction: [0.6, 0.005, 0.0001], solref: [0.04, 1.0], texture: Candle}   # waxy skin
+    pear:                 {friction: [0.6, 0.005, 0.0001], solref: [0.03, 1.0], texture: Pleather}   # matte skin
+    peach:                {friction: [0.8, 0.005, 0.0001], solref: [0.05, 1.0], texture: Velvet}   # fuzzy skin
+    lemon:                {friction: [0.7, 0.005, 0.0001], solref: [0.03, 1.0], texture: Textured Rubber}   # dimpled peel
+    orange:               {friction: [0.7, 0.005, 0.0001], solref: [0.04, 1.0], texture: Textured Rubber}   # dimpled peel
+    strawberry:           {friction: [0.8, 0.005, 0.0001], solref: [0.05, 1.0], texture: Cork}   # seeded
+    baseball:             {friction: [0.6, 0.005, 0.0001], solref: [0.01, 1.0], texture: Leather 1 Front}   # leather
+    softball:             {friction: [0.6, 0.005, 0.0001], solref: [0.015, 1.0], texture: Leather 2 Front}   # leather
+    tennis_ball:          {friction: [0.9, 0.005, 0.0001], solref: [0.03, 1.0], texture: Felt}   # felt
+    racquetball:          {friction: [0.9, 0.005, 0.0001], solref: [0.04, 1.0], texture: Nitrile Glove}   # rubber
+    golf_ball:            {friction: [0.4, 0.005, 0.0001], solref: [0.006, 1.0], texture: Plastic Mesh 1}   # dimpled ionomer
+    mini_soccer_ball:     {friction: [0.6, 0.005, 0.0001], solref: [0.03, 1.0], texture: Pleather}   # synthetic leather

@@ -101,6 +101,8 @@ class MissingToMaxDepth(Transform):
         """
         # loop over sensor modules
         for sm in observations[self.agent_id]:
+            if "depth" not in observations[self.agent_id][sm]:
+                continue  # e.g. a touch-only sensor
             m = np.where(observations[self.agent_id][sm]["depth"] <= self.threshold)
             observations[self.agent_id][sm]["depth"][m] = self.max_depth
         return observations

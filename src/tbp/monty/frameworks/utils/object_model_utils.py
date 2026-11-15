@@ -152,8 +152,16 @@ def already_in_list(
                         features[feature][feature_idx] - features[feature][query_id]
                     )
                     if len(delta_change.shape) > 0:
+                        thresholds = graph_delta_thresholds[feature]
                         for i, dc in enumerate(delta_change):
-                            if dc > graph_delta_thresholds[feature][i]:
+                            # a scalar feature is stored as a 1-element array but
+                            # may be given a scalar threshold
+                            threshold = (
+                                thresholds[i]
+                                if hasattr(thresholds, "__len__")
+                                else thresholds
+                            )
+                            if dc > threshold:
                                 logger.debug(
                                     f"Interesting point because of {feature} : {dc}"
                                 )

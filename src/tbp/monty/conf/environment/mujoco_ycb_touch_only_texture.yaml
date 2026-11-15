@@ -1,0 +1,8 @@
+# @package experiment.config.environment
+# mujoco_ycb_touch_only with recorded texture: each object's materials entry names a Penn Haptic Texture
+# Toolkit model (mug Ceramic, banana Candle, can Aluminum, box Cardboard) and the fingertip feels its
+# vibration. The HaTT model files are not distributed with tbp.monty: put them in $MONTY_DATA/hatt.
+defaults:
+  - mujoco_ycb_touch_only
+env_init_args:
+  texture_path: ${path.expanduser:${oc.env:MONTY_DATA}/hatt}

@@ -1,0 +1,19 @@
+# @package experiment.config.environment
+# mujoco_ycb_touch_agent with the cameras taken off: the surface agent carries only the fingertip, which
+# also palpates (10 mm either side of the contact) to read the principal curvatures.
+defaults:
+  - mujoco_ycb_touch_agent
+env_init_args:
+  agents:
+    - _target_: tbp.monty.simulators.mujoco.agents.SurfaceAgent
+      _partial_: true
+      agent_id: agent_id_0
+      sensor_configs: {}
+      touch:
+        _target_: tbp.monty.simulators.mujoco.agents.TouchConfig
+        sensor_id: finger
+        position: [0.0, 0.0, 0.0]
+        radius: 0.04
+        drag_speed: 5.0
+        palpate: 0.01
+      position: [0.0, 1.5, 0.1]

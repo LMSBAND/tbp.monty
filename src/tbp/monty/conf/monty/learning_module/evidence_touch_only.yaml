@@ -1,0 +1,12 @@
+# @package experiment.config.monty_config.learning_modules
+# The fingertip's evidence LM with curvature: evidence_finger plus the palpated principal curvatures
+# (the stock eye's tolerance for them).
+defaults:
+  - evidence_finger
+learning_module_0:
+  feature_weights:
+    finger:
+      principal_curvatures_log: ${np.ones:2}
+  tolerances:
+    finger:
+      principal_curvatures_log: ${np.ones:2}

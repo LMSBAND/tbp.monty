@@ -10,12 +10,20 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 import quaternion as qt
-from mujoco import MjsBody, mjtJoint
+from mujoco import (
+    MjsBody,
+    mj_contactForce,
+    mj_forward,
+    mj_fwdPosition,
+    mjtGeom,
+    mjtJoint,
+)
 
 from tbp.monty.frameworks.actions.actions import (
     LookDown,
@@ -98,6 +106,70 @@ class Agent(Protocol):
         """Resets the agent to its initial state."""
 
 
+@dataclass
+class TouchConfig:
+    """A fingertip on one of the agent's sensors.
+
+    A sphere is attached to the sensor body at the sensor's position. It is hidden
+    from the cameras (geom group 3) but collides, so when the surface agent sits at
+    its working distance the sphere presses into the object and MuJoCo's contact
+    solver computes the contact. The agent's observation for that sensor then
+    carries what the solver already knows:
+
+    - ``touching``: whether the fingertip is in contact
+    - ``press``: the normal force (N) at the resting pose
+    - ``touch_depth``: how far the tip is pressed in (m)
+    - ``grip``: tangential / normal force while the tip is dragged along the surface
+      at ``drag_speed``, i.e. the friction coefficient. The drag is virtual: the
+      velocity is set for one forward pass and cleared, nothing moves.
+
+    The fingertip's observation also carries ``touch_pos`` and ``touch_normal``: the
+    contact point and the surface normal there (pointing out of the object), in world
+    coordinates, straight from the solver. A `TouchSM` builds a percept from those
+    alone, with no camera.
+
+    Attributes:
+        sensor_id: the sensor the fingertip sits on and whose observation gets the
+            touch fields. If it names one of the agent's cameras the fingertip sits
+            at that camera; otherwise it is a touch-only sensor at ``position``.
+        position: where the fingertip sits on the sensor body when ``sensor_id`` is
+            not a camera (m, relative to the sensor body).
+        radius: fingertip radius (m). Make it larger than the agent's working
+            distance from the surface so that it presses in.
+        drag_speed: tangential speed (m/s) used to read the friction coefficient.
+            Fast enough to saturate the friction cone; 5 m/s does.
+        friction: the fingertip's own sliding friction. MuJoCo combines the two
+            geoms' friction by taking the larger, so keep this small and the
+            object's value is what gets read.
+        palpate: if > 0, the fingertip also reads curvature: it is pressed in
+            again at four points this far (m) to either side of the contact along
+            the two tangents (virtual, like the drag: positions only, then put
+            back), and the way the contact normal turns against the way the
+            contact point moves is the surface's shape operator. Its eigenvalues
+            are the principal curvatures (1/m, convex negative as in `CameraSM`),
+            its eigenvectors the principal directions. Adds ``touch_curvatures``,
+            ``touch_curvature_dirs`` and ``touch_curvature_valid``.
+        stroke_speed: if the touched object has a recorded texture (the
+            simulator's ``texture_path`` and a ``texture`` in its materials
+            entry), the fingertip strokes it at this speed (mm/s) ...
+        stroke_force: ... with this normal force (N), a light exploratory
+            stroke, and the observation's ``vibration`` is what it feels:
+            ``stroke_samples`` of acceleration (m/s^2) at the texture's 1 kHz.
+            The stroke is virtual like the drag; nothing moves.
+        stroke_samples: length of the vibration trace.
+    """
+
+    sensor_id: SensorID
+    position: VectorXYZ = ZERO_VECTOR
+    radius: float = 0.04
+    drag_speed: float = 5.0
+    friction: float = 0.05
+    palpate: float = 0.0
+    stroke_speed: float = 100.0
+    stroke_force: float = 1.0
+    stroke_samples: int = 256
+
+
 class Embodiment(Agent):
     """The embodiment of an agent inside the simulator.
 
@@ -117,6 +189,7 @@ class Embodiment(Agent):
         sensor_configs: dict[SensorID, SensorConfig],
         position: VectorXYZ = ZERO_VECTOR,
         rotation: QuaternionWXYZ = IDENTITY_QUATERNION,
+        touch: TouchConfig | None = None,
     ):
         self.id = agent_id
         self.sim = simulator
@@ -124,6 +197,8 @@ class Embodiment(Agent):
         self._initial_position = position
         self._initial_rotation = rotation
         self._sensor_configs = sensor_configs
+        self._touch = touch
+        self._texture_rng = np.random.default_rng(0)
 
         # Create agent and sensors in MuJoCo
         agent_body: MjsBody = self.sim.spec.worldbody.add_body(
@@ -160,6 +235,224 @@ class Embodiment(Agent):
                     zoom=sensor_cfg.zoom,
                 ),
             )
+
+        if touch is not None:
+            self.fingertip_name = f"{self.id}.fingertip"
+            camera = self._sensor_configs.get(touch.sensor_id)
+            self._touch_position = camera.position if camera else touch.position
+            sensor_body.add_geom(
+                name=self.fingertip_name,
+                type=mjtGeom.mjGEOM_SPHERE,
+                size=(touch.radius, 0.0, 0.0),
+                pos=self._touch_position,
+                # group 3 is not rendered: the cameras look straight through it
+                group=3,
+                friction=(touch.friction, 0.005, 0.0001),
+                rgba=(1.0, 0.6, 0.2, 0.5),
+            )
+
+    def _fingertip_contact(self) -> dict[str, Any] | None:
+        """The fingertip's deepest contact, read from the solver.
+
+        With a decomposed object the tip can touch several convex pieces at once;
+        the deepest contact is the one on the surface under the tip, and all the
+        readings are taken from it alone so they do not depend on the piece count.
+
+        Returns:
+            normal (N) and tangential (N) force at that contact, its penetration (m),
+            its frame (normal pointing out of the object, tangent, tangent), the
+            point on the object's surface (world coordinates), the geom it touches,
+            and the total normal force over all the tip's contacts; None if not
+            touching.
+        """
+        m, d = self.sim.model, self.sim.data
+        gid = m.geom(self.fingertip_name).id
+        f6 = np.zeros(6)
+        best: dict[str, Any] | None = None
+        total_normal = 0.0
+        for j in range(d.ncon):
+            c = d.contact[j]
+            if gid not in (c.geom1, c.geom2):
+                continue
+            mj_contactForce(m, d, j, f6)
+            total_normal += abs(float(f6[0]))
+            depth = -float(c.dist)
+            if best is not None and depth <= best["depth"]:
+                continue
+            frame = np.array(c.frame).reshape(3, 3).copy()
+            if (
+                c.geom1 == gid
+            ):  # the frame normal runs geom1 -> geom2; we want object -> fingertip
+                frame[0] = -frame[0]
+            best = {
+                "normal_force": abs(float(f6[0])),
+                "tangential_force": float(np.hypot(f6[1], f6[2])),
+                "depth": max(depth, 0.0),
+                "frame": frame,
+                # MuJoCo puts the contact point midway through the penetration;
+                # half a depth out along the normal is the object's surface
+                "pos": np.array(c.pos) + 0.5 * max(depth, 0.0) * frame[0],
+                "geom": c.geom1 if c.geom2 == gid else c.geom2,
+            }
+        if best is not None:
+            best["total_normal_force"] = total_normal
+        return best
+
+    def _deepest_contact_geometry(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """Where the fingertip's deepest contact is and which way it faces.
+
+        Geometry only (no forces), so it can follow ``mj_fwdPosition``.
+
+        Returns:
+            the point on the object's surface and the normal out of the object,
+            or None if not touching.
+        """
+        m, d = self.sim.model, self.sim.data
+        gid = m.geom(self.fingertip_name).id
+        best = None
+        for j in range(d.ncon):
+            c = d.contact[j]
+            if gid not in (c.geom1, c.geom2):
+                continue
+            depth = -float(c.dist)
+            if depth <= 0.0 or (best is not None and depth <= best[0]):
+                continue
+            normal = np.array(c.frame[:3])
+            if c.geom1 == gid:
+                normal = -normal
+            best = (depth, np.array(c.pos) + 0.5 * depth * normal, normal)
+        return None if best is None else (best[1], best[2])
+
+    def _palpate(
+        self, pos: np.ndarray, frame: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, bool]:
+        """Principal curvatures under the fingertip, by pressing in beside it.
+
+        The tip is shifted by ``palpate`` along +/- each tangent of the contact
+        frame and the deepest contact is read again at each. With d_p the move of
+        the contact point and d_n the turn of the normal, both in the tangent
+        plane, d_n = S d_p for the shape operator S (symmetric, fitted by least
+        squares over the four presses). A sphere of radius r gives S = I / r
+        whatever the fingertip's own size, because the measured contact point is
+        used, not the tip's centre.
+
+        Returns:
+            (k1, k2) with k1 >= k2 (convex negative), the two principal
+            directions (world frame), and whether all four presses touched.
+        """
+        m, d = self.sim.model, self.sim.data
+        adr = m.jnt_qposadr[self.agent_joint.id]
+        home = d.qpos[adr : adr + 3].copy()
+        normal, t1, t2 = frame[0], frame[1], frame[2]
+        rows, rhs = [], []
+        ok = True
+        h = self._touch.palpate
+        for shift in (t1, -t1, t2, -t2):
+            d.qpos[adr : adr + 3] = home + h * shift
+            mj_fwdPosition(m, d)
+            hit = self._deepest_contact_geometry()
+            if hit is None:
+                ok = False
+                break
+            dp = hit[0] - pos
+            dn = hit[1] - normal
+            u, v = float(dp @ t1), float(dp @ t2)
+            du, dv = float(dn @ t1), float(dn @ t2)
+            # S = [[a, b], [b, c]]: du = a u + b v, dv = b u + c v
+            rows += [[u, v, 0.0], [0.0, u, v]]
+            rhs += [du, dv]
+        d.qpos[adr : adr + 3] = home
+        mj_forward(m, d)
+        if not ok:
+            return np.zeros(2), np.zeros((2, 3)), False
+        (a, b, c), *_ = np.linalg.lstsq(np.array(rows), np.array(rhs), rcond=None)
+        eigval, eigvec = np.linalg.eigh(np.array([[a, b], [b, c]]))
+        k = -eigval  # outward normal turning with the motion is convex: negative
+        order = np.argsort(k)[::-1]
+        k = k[order]
+        dirs = np.array([eigvec[0, i] * t1 + eigvec[1, i] * t2 for i in order])
+        if np.dot(np.cross(dirs[0], dirs[1]), normal) < 0:
+            dirs[1] = -dirs[1]  # dir2 to the right-hand side of dir1, as CameraSM
+        return k, dirs, True
+
+    def _touch_observation(self) -> dict[str, Any]:
+        """Reads the fingertip.
+
+        Contact, normal force, depth, where and which way, and friction by a
+        virtual drag along the surface.
+
+        Returns:
+            The touch fields of the fingertip's `SensorObservation`.
+        """
+        contact = self._fingertip_contact()
+        if contact is None or contact["total_normal_force"] <= 0.0:
+            empty = {
+                "touching": False,
+                "press": 0.0,
+                "touch_depth": 0.0,
+                "grip": 0.0,
+                "touch_pos": np.zeros(3),
+                "touch_normal": np.zeros(3),
+                "touch_gap": float("inf"),
+            }
+            if self._touch.palpate > 0:
+                empty |= {
+                    "touch_curvatures": np.zeros(2),
+                    "touch_curvature_dirs": np.zeros((2, 3)),
+                    "touch_curvature_valid": False,
+                }
+            return empty
+        m, d = self.sim.model, self.sim.data
+        # Measure against the deepest piece alone. An object decomposed into convex
+        # pieces meets the tip at several contacts and the solver splits the load
+        # between them arbitrarily, so for the measuring passes every other
+        # collision is switched off (model arrays, no recompile) and switched back.
+        gid = m.geom(self.fingertip_name).id
+        contype, conaffinity = m.geom_contype.copy(), m.geom_conaffinity.copy()
+        keep = np.zeros(m.ngeom, dtype=bool)
+        keep[[gid, contact["geom"]]] = True
+        m.geom_contype[~keep] = 0
+        m.geom_conaffinity[~keep] = 0
+        mj_forward(m, d)
+        single = self._fingertip_contact() or contact
+        dof = m.jnt_dofadr[self.agent_joint.id]
+        d.qvel[dof : dof + 3] = single["frame"][1] * self._touch.drag_speed
+        mj_forward(m, d)
+        dragging = self._fingertip_contact()
+        d.qvel[dof : dof + 3] = 0.0
+        m.geom_contype[:] = contype
+        m.geom_conaffinity[:] = conaffinity
+        mj_forward(m, d)
+        grip = 0.0
+        if dragging is not None and dragging["normal_force"] > 1e-9:
+            grip = dragging["tangential_force"] / dragging["normal_force"]
+        reading = {
+            "touching": True,
+            "press": single["normal_force"],
+            "touch_depth": single["depth"],
+            "grip": grip,
+            "touch_pos": single["pos"],
+            "touch_normal": single["frame"][0],
+            # from the fingertip's centre (the sensor) out to the surface: the
+            # finger knows its own size, so this is how far it is pressed in
+            "touch_gap": self._touch.radius - single["depth"],
+        }
+        texture = self.sim.texture_of_geom(single["geom"])
+        if texture is not None:
+            reading["vibration"] = texture.vibration(
+                self._touch.stroke_speed,
+                self._touch.stroke_force,
+                self._touch.stroke_samples,
+                self._texture_rng,
+            )
+        if self._touch.palpate > 0:
+            k, dirs, valid = self._palpate(single["pos"], single["frame"])
+            reading |= {
+                "touch_curvatures": k,
+                "touch_curvature_dirs": dirs,
+                "touch_curvature_valid": valid,
+            }
+        return reading
 
     @property
     def position(self) -> VectorXYZ:
@@ -244,6 +537,12 @@ class Embodiment(Agent):
                 rgba=rgba_data,
                 semantic=semantic_data,
             )
+        if self._touch is not None:
+            touch = self._touch_observation()
+            if self._touch.sensor_id in obs:
+                obs[self._touch.sensor_id].update(touch)
+            else:  # a touch-only sensor: no camera, just the fingertip
+                obs[self._touch.sensor_id] = SensorObservation(**touch)
         return obs
 
     @property
@@ -270,6 +569,12 @@ class Embodiment(Agent):
             sensor_pos_rel_agent = sensor_body_rot_rel_agent.apply(sensor_cfg.position)
             sensor_states[sensor_id] = SensorState(
                 position=cast("VectorXYZ", tuple(sensor_pos_rel_agent)),
+                rotation=sensor_body_rot_quat,
+            )
+        if self._touch is not None and self._touch.sensor_id not in sensor_states:
+            touch_pos_rel_agent = sensor_body_rot_rel_agent.apply(self._touch_position)
+            sensor_states[self._touch.sensor_id] = SensorState(
+                position=cast("VectorXYZ", tuple(touch_pos_rel_agent)),
                 rotation=sensor_body_rot_quat,
             )
         return AgentState(
@@ -391,9 +696,10 @@ class DistantAgent(Agent):
         sensor_configs: dict[SensorID, SensorConfig],
         position: VectorXYZ = ZERO_VECTOR,
         rotation: QuaternionWXYZ = IDENTITY_QUATERNION,
+        touch: TouchConfig | None = None,
     ):
         self._embodiment = Embodiment(
-            simulator, agent_id, sensor_configs, position, rotation
+            simulator, agent_id, sensor_configs, position, rotation, touch
         )
         self.id = agent_id
 
@@ -491,9 +797,10 @@ class SurfaceAgent(Agent):
         sensor_configs: dict[SensorID, SensorConfig],
         position: VectorXYZ = ZERO_VECTOR,
         rotation: QuaternionWXYZ = IDENTITY_QUATERNION,
+        touch: TouchConfig | None = None,
     ):
         self._embodiment = Embodiment(
-            simulator, agent_id, sensor_configs, position, rotation
+            simulator, agent_id, sensor_configs, position, rotation, touch
         )
         self.id = agent_id
 
